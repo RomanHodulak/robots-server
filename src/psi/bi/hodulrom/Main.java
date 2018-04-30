@@ -252,10 +252,10 @@ class ServerResponse {
 
 enum Action {
 	login(12),
-	auth(12),
+	authorize(12),
 	update(12),
 	recharge(12),
-	fullyCharged(12),
+	stopCharging(12),
 	getMessage(100);
 
 	private int maxLength;
@@ -286,14 +286,31 @@ class RobotServer {
 	private Robot robot = null;
 	private Map<Action, Function<String, ServerResponse>> actions = new HashMap<>();
 
+	/**
+	 * Constructs new Robot Server instance.
+	 *
+	 * @param serverKey Server key.
+	 * @param clientKey Robot key.
+	 */
 	public RobotServer(int serverKey, int clientKey) {
 		this.serverKey = (char) serverKey;
 		this.clientKey = (char) clientKey;
+
+		// Initialize action callbacks
+		actions.put(Action.login, this::login);
+		actions.put(Action.authorize, this::authorize);
+		actions.put(Action.update, this::update);
+		actions.put(Action.stopCharging, this::stopCharging);
+		actions.put(Action.getMessage, this::getMessage);
 	}
 
+	/**
+	 * Starts listening on given port.
+	 *
+	 * @param port Port to listen on.
+	 * @throws IOException Socket or stream could not be initialized (see exception message).
+	 */
 	public void listen(int port) throws IOException {
-		this.initActions();
-
 		ServerSocket serverSocket = new ServerSocket(port);
 		Socket clientSocket = serverSocket.accept();
 		System.out.println("client accepted from: " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
@@ -314,33 +331,21 @@ class RobotServer {
 					this.robot.startCharging();
 					clientSocket.setSoTimeout(TIMEOUT_CHARGING);
 					System.out.println("waiting for recharge");
+
 					continue;
 				}
 
 				ServerResponse response = this.actions.get(expectedAction).apply(request);
 
-				if(response == null) {
-					continue;
-				}
+				if(!this.handleResponse(response, out) && !this.handleResponse(response, outc)) break;
 
-				response.print(out);
-
-				if(response.closesConnection()) {
-					break;
-				}
-
-				for(ServerResponse followUp = response.followUp(); followUp != null; followUp = followUp.followUp()) {
-					followUp.print(out);
-				}
-
-				outc.println("response: " + response.toString());
-				outc.flush();
 				out.flush();
+				outc.flush();
 			}
 			catch (RobotServerException e) {
-				out.print(e.response.toString());
+				this.handleResponse(e.response, out);
+				this.handleResponse(e.response, outc);
 				out.flush();
-				outc.println("response: " + e.response.toString());
 				outc.flush();
 				break;
 			}
@@ -356,16 +361,36 @@ class RobotServer {
 		serverSocket.close();
 	}
 
-	private void initActions() {
-		if(!actions.isEmpty()) return;
+	/**
+	 * Properly handles the response and prints it out if needed.
+	 *
+	 * @param response Response to handle.
+	 * @param out Output to write the responses to.
+	 * @return TRUE if server can continue listening, FALSE if connection should be closed.
+	 */
+	private boolean handleResponse(ServerResponse response, PrintWriter out) {
+		if(response == null) return true;
 
-		actions.put(Action.login, this::login);
-		actions.put(Action.auth, this::auth);
-		actions.put(Action.update, this::update);
-		actions.put(Action.getMessage, this::getMessage);
-		actions.put(Action.fullyCharged, this::fullyCharged);
+		response.print(out);
+
+		if(response.closesConnection()) return false;
+
+		for(ServerResponse followUp = response.followUp(); followUp != null; followUp = followUp.followUp()) {
+			this.handleResponse(followUp, out);
+		}
+
+		return true;
 	}
 
+	/**
+	 * Reads input stream until termination sequence or syntax error is detected.
+	 *
+	 * @param in Reader wrapping the input stream.
+	 * @param expectedAction Action that is now expected to be run.
+	 * @return Robot request.
+	 * @throws IOException Error while reading from buffered reader.
+	 * @throws RobotServerException Syntax error.
+	 */
 	private String getRequest(BufferedReader in, Action expectedAction) throws IOException, RobotServerException {
 		StringBuilder builder = new StringBuilder(expectedAction.getMaxLength());
 
@@ -382,15 +407,20 @@ class RobotServer {
 		return buffer.substring(0, buffer.length() - ServerResponse.TERMINATION_SEQUENCE.length());
 	}
 
+	/**
+	 * Gets appropriate action for the robot to do next, based on its current state.
+	 *
+	 * @return Action to run.
+	 */
 	private Action deduceAction() {
 		if(this.robot == null) {
 			return Action.login;
 		}
-		if(!this.robot.isAuthorized()) {
-			return Action.auth;
-		}
 		if(this.robot.isCharging()) {
-			return Action.fullyCharged;
+			return Action.stopCharging;
+		}
+		if(!this.robot.isAuthorized()) {
+			return Action.authorize;
 		}
 		if(this.robot.reachedTargetArea()) {
 			return Action.getMessage;
@@ -399,22 +429,23 @@ class RobotServer {
 		return Action.update;
 	}
 
+	/**
+	 * Calculates accept code. Requires logged-in robot.
+	 *
+	 * @return Accept code calculated.
+	 */
 	private char acceptCode() {
 		return (char) (this.robot.getUsernameHash() + this.serverKey);
 	}
 
+	/**
+	 * Checks if the request requires charging.
+	 *
+	 * @param request Request
+	 * @return TRUE if server should wait for robot to recharge.
+	 */
 	private boolean requestsCharging(String request) {
 		return request.equals("RECHARGING");
-	}
-
-	private ServerResponse fullyCharged(String request) {
-		if(!request.equals("FULL POWER")) {
-			return new ServerResponse(302);
-		}
-
-		this.robot.stopCharging();
-
-		return null;
 	}
 
 	/**
@@ -435,7 +466,7 @@ class RobotServer {
 	 * @param request Request.
 	 * @return Response.
 	 */
-	private ServerResponse auth(String request) {
+	private ServerResponse authorize(String request) {
 		try {
 			char clientAcceptCode = (char) Integer.parseUnsignedInt(request);
 
@@ -451,12 +482,38 @@ class RobotServer {
 	}
 
 	/**
-	 * Performs update request with no update from the robot.
+	 * Marks the robot as fully charged.
 	 *
+	 * @param request Request.
 	 * @return Response.
 	 */
-	private ServerResponse update() {
-		return this.update("OK " + this.robot.getPosition().x + ' ' + this.robot.getPosition().y);
+	private ServerResponse stopCharging(String request) {
+		if(!request.equals("FULL POWER")) {
+			return new ServerResponse(302);
+		}
+
+		this.robot.stopCharging();
+
+		return null;
+	}
+
+	/**
+	 * Parses message pick up request. Robot will get logged out if a message has been found, otherwise keeps searching.
+	 *
+	 * @param request Request.
+	 * @return Response.
+	 */
+	private ServerResponse getMessage(String request) {
+		if(request.isEmpty()) {
+			this.robot.discover();
+
+			return this.update();
+		}
+
+		// Logout
+		this.robot = null;
+
+		return new ServerResponse(106);
 	}
 
 	/**
@@ -480,11 +537,20 @@ class RobotServer {
 			int y = Integer.parseInt(parts[2]);
 
 			this.robot.moveTo(x, y);
+
+			return this.update();
 		}
 		catch (NumberFormatException e) {
 			return new ServerResponse(301);
 		}
+	}
 
+	/**
+	 * Sets up directions for the robot based on its current position and direction.
+	 *
+	 * @return Response.
+	 */
+	private ServerResponse update() {
 		if(!this.robot.knowsPosition()) {
 			return new ServerResponse(102);
 		}
@@ -536,25 +602,6 @@ class RobotServer {
 
 		// Rotating help does not help, just rotate right whatever the case.
 		return new ServerResponse(103);
-	}
-
-	/**
-	 * Parses message pick up request. Robot will get logged out if a message has been found, otherwise keeps searching.
-	 *
-	 * @param request Request.
-	 * @return Response.
-	 */
-	private ServerResponse getMessage(String request) {
-		if(request.isEmpty()) {
-			this.robot.discover();
-
-			return this.update();
-		}
-
-		// Logout
-		this.robot = null;
-
-		return new ServerResponse(106);
 	}
 }
 
