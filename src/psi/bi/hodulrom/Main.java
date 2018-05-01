@@ -4,6 +4,7 @@ import java.io.*;
 import java.net.*;
 
 class Vector2 {
+
 	private int x;
 	private int y;
 
@@ -18,19 +19,11 @@ class Vector2 {
 	}
 
 	public int getX() {
-		return x;
-	}
-
-	public void setX(int x) {
-		this.x = x;
+		return this.x;
 	}
 
 	public int getY() {
-		return y;
-	}
-
-	public void setY(int y) {
-		this.y = y;
+		return this.y;
 	}
 
 	public void setTo(int x, int y) {
@@ -85,8 +78,8 @@ class Vector2 {
 
 	@Override
 	public boolean equals(Object obj) {
-		if(!(obj instanceof Vector2)) return false;
-		if(obj == this) return true;
+		if (!(obj instanceof Vector2)) return false;
+		if (obj == this) return true;
 
 		Vector2 v = (Vector2) obj;
 
@@ -101,8 +94,11 @@ enum Direction {
 }
 
 class Robot {
-	/** Coordinates */
+
+	/** Robot position (if known). */
 	private Vector2 pos = null;
+
+	/** Robot direction (if known). */
 	private Vector2 dir = null;
 
 	/** Charge status */
@@ -119,22 +115,39 @@ class Robot {
 		}
 	}
 
+	/**
+	 * Checks charging status.
+	 *
+	 * @return TRUE if robot is charging, FALSE otherwise.
+	 */
 	public boolean isCharging() {
 		return this.charging;
 	}
 
+	/**
+	 * Puts the robot in a charging state.
+	 */
 	public void startCharging() {
 		this.charging = true;
 	}
 
+	/**
+	 * Removes charging state.
+	 */
 	public void stopCharging() {
 		this.charging = false;
 	}
 
+	/**
+	 * Checks if the current position of the robot is known.
+	 */
 	public boolean knowsPosition() {
 		return this.pos != null;
 	}
 
+	/**
+	 * Checks if the current direction of the robot is known.
+	 */
 	public boolean knowsDirection() {
 		return this.dir != null;
 	}
@@ -143,7 +156,7 @@ class Robot {
 	 * Marks current robot position as searched.
 	 */
 	public void search() {
-		if(this.isSearchable(this.pos)) {
+		if (this.isSearchable(this.pos)) {
 			this.searched[this.pos.getX() + 2][this.pos.getY() + 2] = true;
 		}
 	}
@@ -155,23 +168,23 @@ class Robot {
 	 * @param y Y position coordinate
 	 */
 	public void moveTo(int x, int y) {
-		if(!this.knowsPosition()) {
+		if (!this.knowsPosition()) {
 			this.pos = new Vector2(x, y);
 
 			return;
 		}
 
-		if(this.pos.getX() == x && this.pos.getY() == y) return;
+		if (this.pos.getX() == x && this.pos.getY() == y) return;
 
 		int dirX = x - this.pos.getX();
 		int dirY = y - this.pos.getY();
 
-		if(Math.abs(dirX) > 1 && Math.abs(dirY) > 1) {
+		if (Math.abs(dirX) > 1 && Math.abs(dirY) > 1) {
 			// Some weird jump happened, robot can only move by one at a time. Mark the direction as unknown.
 			this.dir = null;
 		}
 		else {
-			if(this.dir == null) {
+			if (this.dir == null) {
 				this.dir = new Vector2();
 			}
 
@@ -201,11 +214,11 @@ class Robot {
 	 * @return Direction to take next.
 	 */
 	public Direction calculateDirection() {
-		if(!this.knowsPosition()) {
+		if (!this.knowsPosition()) {
 			return Direction.moveForward;
 		}
 
-		if(!this.knowsDirection()) {
+		if (!this.knowsDirection()) {
 			return Direction.moveForward;
 		}
 
@@ -226,18 +239,11 @@ class Robot {
 		int distNextLeft = posNextLeft.distance(nearestTarget);
 		int distNextRight = posNextRight.distance(nearestTarget);
 
-		System.out.println("Position next:  " + posNext);
-		System.out.println("Distance next:  " + distNext);
-		System.out.println("Position left:  " + posNextLeft);
-		System.out.println("Distance left:  " + distNextLeft);
-		System.out.println("Position right: " + posNextRight);
-		System.out.println("Distance right: " + distNextRight);
-
-		if(distNext <= distNextLeft && distNext <= distNextRight) {
+		if (distNext <= distNextLeft && distNext <= distNextRight) {
 			return Direction.moveForward;
 		}
 
-		if(distNextRight <= distNext && distNextRight <= distNextLeft) {
+		if (distNextRight <= distNext && distNextRight <= distNextLeft) {
 			return Direction.turnRight;
 		}
 
@@ -258,14 +264,14 @@ class Robot {
 			for (int y = -2; y <= 2; ++y) {
 				targetCandidate.setTo(x, y);
 
-				if(this.isSearched(targetCandidate)) continue;
+				if (this.isSearched(targetCandidate)) continue;
 
 				int dist = this.pos.distance(targetCandidate);
 
 				if (dist < minDist) {
 					minDist = dist;
 
-					if(target == null) {
+					if (target == null) {
 						target = new Vector2();
 					}
 
@@ -279,8 +285,6 @@ class Robot {
 
 	/**
 	 * Checks if the robot is positioned within target area and on unsearched field.
-	 *
-	 * @return TRUE or FALSE.
 	 */
 	public boolean standsOnSearchable() {
 		return this.knowsPosition() && this.isSearchable(this.pos);
@@ -292,7 +296,7 @@ class Robot {
 	 * @param direction Direction to apply.
 	 */
 	public void tryRotate(Direction direction) {
-		if(!this.knowsDirection()) return;
+		if (!this.knowsDirection()) return;
 
 		switch (direction) {
 			case turnLeft:
@@ -310,7 +314,7 @@ class Robot {
 	 * @return New direction.
 	 */
 	private Vector2 turnRight(Vector2 vec) {
-		if(vec.getY() == 0) {
+		if (vec.getY() == 0) {
 			return new Vector2(0, -this.dir.getX());
 		}
 
@@ -323,7 +327,7 @@ class Robot {
 	 * @return New direction.
 	 */
 	private Vector2 turnLeft(Vector2 vec) {
-		if(vec.getY() == 0) {
+		if (vec.getY() == 0) {
 			return new Vector2(0, this.dir.getX());
 		}
 
@@ -334,7 +338,6 @@ class Robot {
 	 * Checks if given positional vector is within target area and searched for messages.
 	 *
 	 * @param vec Position to check.
-	 * @return TRUE or FALSE.
 	 */
 	private boolean isSearched(Vector2 vec) {
 		return this.isWithinTarget(vec) && this.searched[vec.getX() + 2][vec.getY() + 2];
@@ -344,7 +347,6 @@ class Robot {
 	 * Checks if given positional vector is within target area and on unsearched field.
 	 *
 	 * @param vec Position to check.
-	 * @return TRUE or FALSE.
 	 */
 	private boolean isSearchable(Vector2 vec) {
 		return this.isWithinTarget(vec) && !this.isSearched(vec);
@@ -354,7 +356,6 @@ class Robot {
 	 * Checks if given positional vector is within target area.
 	 *
 	 * @param vec Position to check.
-	 * @return TRUE or FALSE.
 	 */
 	private boolean isWithinTarget(Vector2 vec) {
 		return Math.abs(vec.getX()) <= 2 && Math.abs(vec.getY()) <= 2;
@@ -393,21 +394,37 @@ class LoginFailedException extends RobotException {
 }
 
 class MessageValidator {
+
+	/** Regular expression to check the message against. */
 	public final String regex;
-	public final int maxLen;
 
-	public MessageValidator(String regex, int maxLen) {
+	/** Maximum allowed length of the message. */
+	public final int maxLength;
+
+	public MessageValidator(String regex, int maxLength) {
 		this.regex = regex;
-		this.maxLen = maxLen;
+		this.maxLength = maxLength;
 	}
 
+	/**
+	 * Checks if the message is considered complete.
+	 *
+	 * @param message Message to check.
+	 * @return TRUE if the message is complete and can be processed, FALSE otherwise.
+	 */
 	public boolean isComplete(String message) {
-		return message.endsWith(ServerMessage.TERMINATION_SEQUENCE) || message.length() >= this.maxLen;
+		return message.endsWith(ServerMessage.TERMINATION_SEQUENCE) || message.length() >= this.maxLength;
 	}
 
+	/**
+	 * Checks if the message is considered syntactically valid. Only complete messages should go through this check.
+	 *
+	 * @param message Message to validate.
+	 * @return TRUE if message is valid, FALSE if message is invalid and should not be processed.
+	 */
 	public boolean check(String message) {
-		if(!message.endsWith(ServerMessage.TERMINATION_SEQUENCE)) return false;
-		if(message.length() > this.maxLen) return false;
+		if (!message.endsWith(ServerMessage.TERMINATION_SEQUENCE)) return false;
+		if (message.length() > this.maxLength) return false;
 
 		// Message without the termination sequence
 		String messageOnly = message.substring(0, message.length() - ServerMessage.TERMINATION_SEQUENCE.length());
@@ -422,8 +439,8 @@ abstract class RobotMessage {
 	 * Handles the client according to the message.
 	 *
 	 * @param client Client to update.
-	 * @throws RobotException Invalid message and/or client state.
 	 * @return Validator for the next message from the client.
+	 * @throws RobotException Invalid message and/or client state.
 	 */
 	public abstract MessageValidator handle(Client client) throws RobotException;
 
@@ -434,7 +451,7 @@ abstract class RobotMessage {
 	 * @return Validator of the next message from the client.
 	 */
 	protected MessageValidator searchUpdate(Client client) {
-		if(client.robot.standsOnSearchable()) {
+		if (client.robot.standsOnSearchable()) {
 			client.sendMessage(ServerMessage.pickUp);
 
 			// Expected message or empty string
@@ -473,7 +490,7 @@ class RobotUsernameMessage extends RobotMessage {
 class RobotRechargingMessage extends RobotMessage {
 
 	public RobotRechargingMessage(String request) throws SyntaxErrorException {
-		if(!request.matches("RECHARGING")) {
+		if (!request.matches("RECHARGING")) {
 			throw new SyntaxErrorException();
 		}
 	}
@@ -497,7 +514,7 @@ class RobotConfirmationMessage extends RobotMessage {
 		try {
 			int code = Integer.parseInt(request);
 
-			if(code > Character.MAX_VALUE) {
+			if (code > Character.MAX_VALUE) {
 				throw new SyntaxErrorException();
 			}
 
@@ -510,7 +527,7 @@ class RobotConfirmationMessage extends RobotMessage {
 
 	@Override
 	public MessageValidator handle(Client client) throws LoginFailedException {
-		if(!client.authorize(this.acceptCode)) {
+		if (!client.authorize(this.acceptCode)) {
 			throw new LoginFailedException();
 		}
 		client.sendMessage(ServerMessage.ok);
@@ -522,7 +539,7 @@ class RobotConfirmationMessage extends RobotMessage {
 class RobotFullPowerMessage extends RobotMessage {
 
 	public RobotFullPowerMessage(String request) throws LogicErrorException {
-		if(!request.matches("FULL POWER")) {
+		if (!request.matches("FULL POWER")) {
 			throw new LogicErrorException();
 		}
 	}
@@ -542,12 +559,14 @@ class RobotOkMessage extends RobotMessage {
 	/** Regular expression to validate the incoming request against. */
 	public static final String REQUEST_REGEX = "^OK -?[0-9]+ -?[0-9]+$";
 
-	/** Position coordinates, obtained from the request. */
+	/** X Position coordinate, obtained from the request. */
 	private final int x;
+
+	/** Y Position coordinate, obtained from the request. */
 	private final int y;
 
 	public RobotOkMessage(String request) throws SyntaxErrorException {
-		if(!request.matches(REQUEST_REGEX)) {
+		if (!request.matches(REQUEST_REGEX)) {
 			throw new SyntaxErrorException();
 		}
 
@@ -577,7 +596,7 @@ class RobotPickUpMessage extends RobotMessage {
 	public MessageValidator handle(Client client) {
 		client.robot.search();
 
-		if(!this.message.isEmpty()) {
+		if (!this.message.isEmpty()) {
 			// Message found! Disconnect client
 			client.sendMessage(ServerMessage.logout);
 			client.disconnect();
@@ -590,6 +609,7 @@ class RobotPickUpMessage extends RobotMessage {
 }
 
 enum ServerMessage {
+
 	confirmation,
 	move("102 MOVE"),
 	turnLeft("103 TURN LEFT"),
@@ -614,6 +634,12 @@ enum ServerMessage {
 	ServerMessage() {
 	}
 
+	/**
+	 * Creates confirmation message with given accept code.
+	 *
+	 * @param c Accept code to send (number mod 2^16)
+	 * @return Message created.
+	 */
 	public static ServerMessage confirmation(char c) {
 		ServerMessage msg = ServerMessage.confirmation;
 		msg.setAcceptCode(c);
@@ -621,12 +647,19 @@ enum ServerMessage {
 		return msg;
 	}
 
+	/**
+	 * Returns server message based on direction instance.
+	 *
+	 * @param direction Direction instance.
+	 * @return Message created.
+	 */
 	public static ServerMessage fromDirection(Direction direction) {
 		switch (direction) {
 			case moveForward: return ServerMessage.move;
 			case turnLeft: return ServerMessage.turnLeft;
 			case turnRight: return ServerMessage.turnRight;
 		}
+
 		return ServerMessage.move;
 	}
 
@@ -635,6 +668,11 @@ enum ServerMessage {
 		return this.message;
 	}
 
+	/**
+	 * Assigns accept code as message. Should be only used for instantiating confirmation message.
+	 *
+	 * @param c Accept code to set.
+	 */
 	private void setAcceptCode(char c) {
 		this.message = Integer.toString((int) c) + TERMINATION_SEQUENCE;
 	}
@@ -651,22 +689,22 @@ class RobotMessageFactory {
 	 * @throws RobotException Invalid message and/or client state.
 	 */
 	public RobotMessage create(Client client, String request) throws RobotException {
-		if(!client.isLoggedIn()) {
+		if (!client.isLoggedIn()) {
 			return new RobotUsernameMessage(request);
 		}
-		if(client.robot.isCharging()) {
+		if (client.robot.isCharging()) {
 			return new RobotFullPowerMessage(request);
 		}
-		if(request.equals("RECHARGING")) {
+		if (request.equals("RECHARGING")) {
 			return new RobotRechargingMessage(request);
 		}
-		if(request.equals("FULL POWER")) {
+		if (request.equals("FULL POWER")) {
 			return new RobotFullPowerMessage(request);
 		}
-		if(!client.isAuthorized()) {
+		if (!client.isAuthorized()) {
 			return new RobotConfirmationMessage(request);
 		}
-		if(request.matches(RobotOkMessage.REQUEST_REGEX)) {
+		if (request.matches(RobotOkMessage.REQUEST_REGEX)) {
 			return new RobotOkMessage(request);
 		}
 
@@ -679,21 +717,29 @@ class Client {
 	/** Virtual representation of the client machine. */
 	public final Robot robot;
 
-	/** Connection */
+	/** Connection status. */
 	private boolean connected;
+
+	/** Connected client socket. */
 	private Socket socket;
 
-	/** Authorization */
+	/** Hash based on username. */
 	private char usernameHash = 0;
+
+	/** Authorization status. */
 	private boolean authorized;
+
+	/** Client security key. */
 	private final char clientKey;
+
+	/** Server security key. */
 	private final char serverKey;
 
-	/** Message output */
+	/** Message output. */
 	private PrintWriter output;
 
-	public Client(Socket socket, PrintWriter output, char serverKey, char clientKey) {
-		this.output = output;
+	public Client(Socket socket, char serverKey, char clientKey) throws IOException {
+		this.output = new PrintWriter(socket.getOutputStream(), true);
 		this.robot = new Robot();
 		this.socket = socket;
 		this.connected = true;
@@ -703,13 +749,30 @@ class Client {
 	}
 
 	/**
-	 * Sends the message back to client.
+	 * Sends the message back to client. Messages are buffered so ensure flushMessages is called after sending messages.
 	 *
 	 * @param message Message to send.
 	 */
 	public void sendMessage(ServerMessage message) {
 		this.output.print(message.toString());
-		System.out.println("Message: " + message.toString());
+		System.out.println("Server: " + message.toString());
+	}
+
+	/**
+	 * Flushes buffered messages in the output stream.
+	 */
+	public void flushMessages() {
+		this.output.flush();
+	}
+
+	/**
+	 * Creates stream reader from client socket input stream.
+	 *
+	 * @return Stream reader.
+	 * @throws IOException Socket terminated while or before getting the stream.
+	 */
+	public BufferedReader createInputReader() throws IOException {
+		return new BufferedReader(new InputStreamReader(this.socket.getInputStream()));
 	}
 
 	/**
@@ -783,7 +846,7 @@ class Client {
 	 */
 	public void waitForRecharge() {
 		try {
-			this.socket.setSoTimeout(RobotServer.TIMEOUT_CHARGING);
+			this.socket.setSoTimeout(RobotServer.CLIENT_TIMEOUT_CHARGING);
 		}
 		catch (SocketException e) {
 			// TCP error occurred, connection cannot continue.
@@ -796,37 +859,119 @@ class Client {
 	 */
 	public void resume() {
 		try {
-			this.socket.setSoTimeout(RobotServer.TIMEOUT_DEFAULT);
+			this.socket.setSoTimeout(RobotServer.CLIENT_TIMEOUT);
 		}
 		catch (SocketException e) {
 			// TCP error occurred, connection cannot continue.
 			this.disconnect();
 		}
 	}
+
+	/**
+	 * Closes active connection.
+	 */
+	public void close() {
+		this.output.close();
+	}
+}
+
+class RobotServerRunnable implements Runnable {
+
+	/** Factory responsible for creating proper robot message instances, that handle incoming messages. */
+	private RobotMessageFactory robotMessageFactory;
+
+	/** Client instance this thread operates with. */
+	private Client client;
+
+	/** Client's input stream. */
+	private BufferedReader input;
+
+	public RobotServerRunnable(Client client) throws IOException {
+		this.client = client;
+		this.input = this.client.createInputReader();
+		this.robotMessageFactory = new RobotMessageFactory();
+	}
+
+	@Override
+	public void run() {
+		// Validator for the login.
+		MessageValidator validator = new MessageValidator(".*", 12);
+
+		while (this.client.isConnected()) {
+			try {
+				RobotMessage message = this.readMessage(validator);
+				validator = message.handle(this.client);
+			}
+			catch (RobotException e) {
+				e.reportTo(this.client);
+				this.client.disconnect();
+			}
+			catch (SocketTimeoutException e) {
+				this.client.disconnect();
+			}
+			catch (IOException e) {
+				System.out.println(e.toString());
+				this.client.disconnect();
+			}
+
+			this.client.flushMessages();
+		}
+
+		try {
+			this.input.close();
+			this.client.close();
+		}
+		catch (IOException e) {
+			System.out.println(e.toString());
+		}
+	}
+
+	/**
+	 * Reads next message from the input stream.
+	 *
+	 * @param validator Validator, preferably retrieved by the previous message.
+	 * @return Message obtained from the input stream.
+	 * @throws RobotException Unexpected or incorrect message is received, which cannot be handled.
+	 * @throws IOException I/O error on the input stream occurred.
+	 */
+	private RobotMessage readMessage(MessageValidator validator) throws RobotException, IOException {
+		StringBuilder messageBuilder = new StringBuilder(validator.maxLength);
+
+		while (!validator.isComplete(messageBuilder.toString())) {
+			messageBuilder.append((char) this.input.read());
+		}
+
+		String message = messageBuilder.toString();
+
+		if (!validator.check(message)) {
+			throw new SyntaxErrorException();
+		}
+
+		// Extract termination sequence.
+		message = message.substring(0, message.length() - ServerMessage.TERMINATION_SEQUENCE.length());
+		System.out.println("Client: " + message);
+
+		return this.robotMessageFactory.create(this.client, message);
+	}
 }
 
 class RobotServer {
 
-	/** Socket timeouts */
-	public static final int TIMEOUT_DEFAULT = 1000;
-	public static final int TIMEOUT_CHARGING = 5000;
+	/** Timeout for incoming connections. */
+	public static final int SERVER_TIMEOUT = 15000;
 
-	/** Authorization keys */
+	/** Default delay that socket waits for input. */
+	public static final int CLIENT_TIMEOUT = 1000;
+
+	/** Delay that socket waits for input from a charging robot. */
+	public static final int CLIENT_TIMEOUT_CHARGING = 5000;
+
+	/** Server authorization key. */
 	private final char serverKey;
+
+	/** Client authorization key. */
 	private final char clientKey;
 
-	/** Active client */
-	private Client client = null;
-
-	/** Services */
-	private RobotMessageFactory robotMessageFactory = new RobotMessageFactory();
-
-	/**
-	 * Constructs new Robot Server instance.
-	 *
-	 * @param serverKey Server clientKey.
-	 * @param clientKey Robot clientKey.
-	 */
 	public RobotServer(int serverKey, int clientKey) {
 		this.serverKey = (char) serverKey;
 		this.clientKey = (char) clientKey;
@@ -840,68 +985,48 @@ class RobotServer {
 	 */
 	public void listen(int port) throws IOException {
 		ServerSocket serverSocket = new ServerSocket(port);
-		Socket clientSocket = serverSocket.accept();
-		clientSocket.setSoTimeout(TIMEOUT_DEFAULT);
+		serverSocket.setSoTimeout(SERVER_TIMEOUT);
 
-		PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
-		BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-
-		this.client = new Client(clientSocket, out, this.serverKey, this.clientKey);
-
-		// Validator for the login.
-		MessageValidator validator = new MessageValidator(".*", 12);
-
-		while (this.client.isConnected()) {
+		for (; ; ) {
 			try {
-				RobotMessage message = this.readMessage(validator, in);
-				validator = message.handle(this.client);
-			}
-			catch (RobotException e) {
-				e.reportTo(this.client);
-				this.client.disconnect();
+				Socket clientSocket = serverSocket.accept();
+				clientSocket.setSoTimeout(CLIENT_TIMEOUT);
+
+				Client client = new Client(clientSocket, this.serverKey, this.clientKey);
+				RobotServerRunnable clientInstance = new RobotServerRunnable(client);
+				Thread clientThread = new Thread(clientInstance);
+
+				clientThread.start();
 			}
 			catch (SocketTimeoutException e) {
-				this.client.disconnect();
+				System.out.println(e.getMessage());
+				break;
 			}
-
-			out.flush();
 		}
 
-		out.close();
-		in.close();
-		clientSocket.close();
 		serverSocket.close();
-	}
-
-	private RobotMessage readMessage(MessageValidator validator, BufferedReader in) throws RobotException, IOException {
-		StringBuilder messageBuilder = new StringBuilder(validator.maxLen);
-
-		while(!validator.isComplete(messageBuilder.toString())) {
-			messageBuilder.append((char) in.read());
-		}
-
-		String message = messageBuilder.toString();
-
-		if(!validator.check(message)) {
-			throw new SyntaxErrorException();
-		}
-
-		message = message.substring(0, message.length() - ServerMessage.TERMINATION_SEQUENCE.length());
-
-		return this.robotMessageFactory.create(this.client, message);
 	}
 }
 
 public class Main {
 
+	/** Port where the server accepts incoming connections. */
+	private static final int PORT = 2222;
+
+	/** Server security key. */
+	private static final int SERVER_KEY = 54621;
+
+	/** Client security key. */
+	private static final int CLIENT_KEY = 45328;
+
 	public static void main(String[] args) {
-		RobotServer server = new RobotServer(54621, 45328);
+		RobotServer server = new RobotServer(SERVER_KEY, CLIENT_KEY);
 
 		try {
-			server.listen(2222);
+			server.listen(PORT);
 		}
-		catch (IOException ex) {
-			System.out.println(ex.toString());
+		catch (IOException e) {
+			System.out.println(e.toString());
 		}
 	}
 }
