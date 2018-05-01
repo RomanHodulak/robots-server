@@ -2,16 +2,60 @@ package psi.bi.hodulrom;
 
 import java.io.*;
 import java.net.*;
-import java.util.*;
-import java.util.function.Function;
 
 class Vector2 {
-	public int x;
-	public int y;
+	private int x;
+	private int y;
 
 	public Vector2(int x, int y) {
 		this.x = x;
 		this.y = y;
+	}
+
+	public Vector2() {
+		this.x = 0;
+		this.y = 0;
+	}
+
+	public int getX() {
+		return x;
+	}
+
+	public void setX(int x) {
+		this.x = x;
+	}
+
+	public int getY() {
+		return y;
+	}
+
+	public void setY(int y) {
+		this.y = y;
+	}
+
+	public void setTo(int x, int y) {
+		this.x = x;
+		this.y = y;
+	}
+
+	/**
+	 * Multiplies all components by given coefficient.
+	 *
+	 * @param m Coefficient to multiply with.
+	 */
+	public void multiply(int m) {
+		this.x *= m;
+		this.y *= m;
+	}
+
+	/**
+	 * Adds given vector to this vector.
+	 *
+	 * @param vec Vector to add to this vector.
+	 */
+	public void add(Vector2 vec) {
+		this.x += vec.x;
+		this.y += vec.y;
 	}
 
 	/**
@@ -24,31 +68,36 @@ class Vector2 {
 		return Math.abs(this.x - v.x) + Math.abs(this.y - v.y);
 	}
 
-	/**
-	 * Calculates a directed angle between this and given vector.
-	 *
-	 * @param v Vector to calculate the angle to.
-	 * @return Angle in degrees
-	 */
-	public double angle(Vector2 v) {
-		return Math.atan2(this.y, this.x) - Math.atan2(v.y, v.x);
+	@Override
+	public String toString() {
+		return "[" + this.x + ", " + this.y + "]";
+	}
+
+	@Override
+	public Vector2 clone() {
+		return new Vector2(this.x, this.y);
 	}
 
 	@Override
 	public int hashCode() {
-		return this.x * (3 << this.y);
+		return (33 ^ this.x) * (33 ^ this.y); // djb2-like hash
 	}
 
 	@Override
 	public boolean equals(Object obj) {
-		if(obj instanceof Vector2) {
-			Vector2 v = (Vector2) obj;
+		if(!(obj instanceof Vector2)) return false;
+		if(obj == this) return true;
 
-			return this.x == v.x && this.x == v.y;
-		}
+		Vector2 v = (Vector2) obj;
 
-		return false;
+		return this.x == v.x && this.x == v.y;
 	}
+}
+
+enum Direction {
+	turnLeft,
+	turnRight,
+	moveForward
 }
 
 class Robot {
@@ -56,61 +105,22 @@ class Robot {
 	private Vector2 pos = null;
 	private Vector2 dir = null;
 
-	/** Authorization */
-	private final char usernameHash;
-	private final char key;
-	private boolean authorized = false;
+	/** Charge status */
 	private boolean charging = false;
 
-	/** Final areas explored for messages. */
-	private Set<Vector2> discovered = new HashSet<>();
+	/** Fields of the target area. TRUE if searched for message, FALSE if not. Coordinates are indices shifted by +2. */
+	private boolean searched[][] = new boolean[5][5];
 
-	public Robot(String username, char key) {
-		this.usernameHash = this.hash(username);
-		this.key = key;
-	}
-
-	public boolean authorize(char acceptCode) {
-		this.authorized = (this.getUsernameHash() == (char) (acceptCode - this.key));
-
-		return this.authorized;
-	}
-
-	public void moveTo(int x, int y) {
-		if(this.knowsPosition()) {
-			if(this.pos.x == x && this.pos.y == y) return;
-
-			this.dir = new Vector2(x - this.pos.x, y - this.pos.y);
+	public Robot() {
+		for (int i = 0; i < searched.length; ++i) {
+			for (int j = 0; j < searched[i].length; ++j) {
+				this.searched[i][j] = false;
+			}
 		}
-
-		this.pos = new Vector2(x, y);
 	}
 
-	public boolean hasDiscovered(Vector2 v) {
-		return discovered.contains(v);
-	}
-
-	/**
-	 * Marks current robot position as discovered.
-	 */
-	public void discover() {
-		this.discovered.add(this.pos);
-	}
-
-	public Vector2 getPosition() {
-		return this.pos;
-	}
-
-	public Vector2 getDirection() {
-		return this.dir;
-	}
-
-	public char getUsernameHash() {
-		return this.usernameHash;
-	}
-
-	public boolean isAuthorized() {
-		return this.authorized;
+	public boolean isCharging() {
+		return this.charging;
 	}
 
 	public void startCharging() {
@@ -121,10 +131,6 @@ class Robot {
 		this.charging = false;
 	}
 
-	public boolean isCharging() {
-		return this.charging;
-	}
-
 	public boolean knowsPosition() {
 		return this.pos != null;
 	}
@@ -133,175 +139,697 @@ class Robot {
 		return this.dir != null;
 	}
 
-	public boolean reachedTargetArea() {
-		return this.pos != null && Math.abs(this.pos.x) == 2 && Math.abs(this.pos.y) == 2 && !this.hasDiscovered(this.pos);
+	/**
+	 * Marks current robot position as searched.
+	 */
+	public void search() {
+		if(this.isSearchable(this.pos)) {
+			this.searched[this.pos.getX() + 2][this.pos.getY() + 2] = true;
+		}
 	}
 
-	private char hash(String username) {
-		char hash = 0;
+	/**
+	 * Sets the robot position, determining its direction as well.
+	 *
+	 * @param x X position coordinate
+	 * @param y Y position coordinate
+	 */
+	public void moveTo(int x, int y) {
+		if(!this.knowsPosition()) {
+			this.pos = new Vector2(x, y);
 
-		for (int i = 0; i < username.length(); ++i) {
-			hash += username.charAt(i) * 1000;
+			return;
 		}
 
-		return hash;
+		if(this.pos.getX() == x && this.pos.getY() == y) return;
+
+		int dirX = x - this.pos.getX();
+		int dirY = y - this.pos.getY();
+
+		if(Math.abs(dirX) > 1 && Math.abs(dirY) > 1) {
+			// Some weird jump happened, robot can only move by one at a time. Mark the direction as unknown.
+			this.dir = null;
+		}
+		else {
+			if(this.dir == null) {
+				this.dir = new Vector2();
+			}
+
+			this.dir.setTo(dirX, dirY);
+		}
+
+		this.pos.setTo(x, y);
 	}
 
-	public Vector2 rotateLeft() {
-		if(this.dir.x == 1) {
-			this.dir = new Vector2(0, 1);
-		}
-		else if(this.dir.x == -1) {
-			this.dir =  new Vector2(0, -1);
-		}
-		else if(this.dir.y == 1) {
-			this.dir = new Vector2(-1, 0);
-		}
-		else if(this.dir.y == -1) {
-			this.dir = new Vector2(1, 0);
-		}
-
-		return this.dir;
+	/**
+	 * Rotates direction -90 degrees.
+	 */
+	public void turnLeft() {
+		this.dir = this.turnLeft(this.dir);
 	}
 
-	public Vector2 rotateRight() {
-		if(this.dir.x == 1) {
-			this.dir = new Vector2(0, -1);
-		}
-		if(this.dir.x == -1) {
-			this.dir = new Vector2(0, 1);
-		}
-		if(this.dir.y == 1) {
-			this.dir = new Vector2(1, 0);
-		}
-		if(this.dir.y == -1) {
-			this.dir = new Vector2(-1, 0);
+	/**
+	 * Rotates direction +90 degrees.
+	 */
+	public void turnRight() {
+		this.dir = this.turnRight(this.dir);
+	}
+
+	/**
+	 * Calculates the shortest direction to the nearest unsearched field within target area.
+	 *
+	 * @return Direction to take next.
+	 */
+	public Direction calculateDirection() {
+		if(!this.knowsPosition()) {
+			return Direction.moveForward;
 		}
 
-		return this.dir;
+		if(!this.knowsDirection()) {
+			return Direction.moveForward;
+		}
+
+		Vector2 nearestTarget = this.findNearestSearchable();
+
+		Vector2 dirLeft = this.turnLeft(this.dir);
+		Vector2 dirRight = this.turnRight(this.dir);
+
+		Vector2 posNext = this.pos.clone();
+		Vector2 posNextLeft = this.pos.clone();
+		Vector2 posNextRight = this.pos.clone();
+
+		posNext.add(this.dir);
+		posNextLeft.add(dirLeft);
+		posNextLeft.add(dirRight);
+
+		int distNext = posNext.distance(nearestTarget);
+		int distNextLeft = posNextLeft.distance(nearestTarget);
+		int distNextRight = posNextRight.distance(nearestTarget);
+
+		System.out.println("Position next:  " + posNext);
+		System.out.println("Distance next:  " + distNext);
+		System.out.println("Position left:  " + posNextLeft);
+		System.out.println("Distance left:  " + distNextLeft);
+		System.out.println("Position right: " + posNextRight);
+		System.out.println("Distance right: " + distNextRight);
+
+		if(distNext <= distNextLeft && distNext <= distNextRight) {
+			return Direction.moveForward;
+		}
+
+		if(distNextRight <= distNext && distNextRight <= distNextLeft) {
+			return Direction.turnRight;
+		}
+
+		return Direction.turnLeft;
+	}
+
+	/**
+	 * Finds nearest unsearched target field. Operates by brute-force but it takes only 25 steps.
+	 *
+	 * @return Nearest unsearched field within target area.
+	 */
+	private Vector2 findNearestSearchable() {
+		Vector2 target = null;
+		Vector2 targetCandidate = new Vector2();
+		int minDist = Integer.MAX_VALUE;
+
+		for (int x = -2; x <= 2; ++x) {
+			for (int y = -2; y <= 2; ++y) {
+				targetCandidate.setTo(x, y);
+
+				if(this.isSearched(targetCandidate)) continue;
+
+				int dist = this.pos.distance(targetCandidate);
+
+				if (dist < minDist) {
+					minDist = dist;
+
+					if(target == null) {
+						target = new Vector2();
+					}
+
+					target.setTo(targetCandidate.getX(), targetCandidate.getY());
+				}
+			}
+		}
+
+		return target;
+	}
+
+	/**
+	 * Checks if the robot is positioned within target area and on unsearched field.
+	 *
+	 * @return TRUE or FALSE.
+	 */
+	public boolean standsOnSearchable() {
+		return this.knowsPosition() && this.isSearchable(this.pos);
+	}
+
+	/**
+	 * Turns left or right if direction is known.
+	 *
+	 * @param direction Direction to apply.
+	 */
+	public void tryRotate(Direction direction) {
+		if(!this.knowsDirection()) return;
+
+		switch (direction) {
+			case turnLeft:
+				this.turnLeft();
+				break;
+			case turnRight:
+				this.turnRight();
+				break;
+		}
+	}
+
+	/**
+	 * Returns copy of the given directional vector, rotated by +90 degrees.
+	 *
+	 * @return New direction.
+	 */
+	private Vector2 turnRight(Vector2 vec) {
+		if(vec.getY() == 0) {
+			return new Vector2(0, -this.dir.getX());
+		}
+
+		return new Vector2(this.dir.getY(), 0);
+	}
+
+	/**
+	 * Returns copy of the given directional vector, rotated by -90 degrees.
+	 *
+	 * @return New direction.
+	 */
+	private Vector2 turnLeft(Vector2 vec) {
+		if(vec.getY() == 0) {
+			return new Vector2(0, this.dir.getX());
+		}
+
+		return new Vector2(-this.dir.getY(), 0);
+	}
+
+	/**
+	 * Checks if given positional vector is within target area and searched for messages.
+	 *
+	 * @param vec Position to check.
+	 * @return TRUE or FALSE.
+	 */
+	private boolean isSearched(Vector2 vec) {
+		return this.isWithinTarget(vec) && this.searched[vec.getX() + 2][vec.getY() + 2];
+	}
+
+	/**
+	 * Checks if given positional vector is within target area and on unsearched field.
+	 *
+	 * @param vec Position to check.
+	 * @return TRUE or FALSE.
+	 */
+	private boolean isSearchable(Vector2 vec) {
+		return this.isWithinTarget(vec) && !this.isSearched(vec);
+	}
+
+	/**
+	 * Checks if given positional vector is within target area.
+	 *
+	 * @param vec Position to check.
+	 * @return TRUE or FALSE.
+	 */
+	private boolean isWithinTarget(Vector2 vec) {
+		return Math.abs(vec.getX()) <= 2 && Math.abs(vec.getY()) <= 2;
 	}
 }
 
-class ServerResponse {
-	/** Special sequence indicating end of message. */
-	static final String TERMINATION_SEQUENCE = "\u0007\u0008"; // \a\b
+abstract class RobotException extends Exception {
 
-	/** Map response code to string messages. */
-	static Map<Integer, String> messages = new HashMap<>();
+	/**
+	 * Informs the client about the error.
+	 *
+	 * @param client Client to report the exception to.
+	 */
+	public abstract void reportTo(Client client);
+}
 
-	/** Maps response to follow-up response, when multiple responses are sent. */
-	static Map<Integer, Integer> followUps = new HashMap<>();
+class SyntaxErrorException extends RobotException {
+	@Override
+	public void reportTo(Client client) {
+		client.sendMessage(ServerMessage.syntaxError);
+	}
+}
 
-	static {
-		messages.put(102, "MOVE");
-		messages.put(103, "TURN LEFT");
-		messages.put(104, "TURN RIGHT");
-		messages.put(105, "GET MESSAGE");
-		messages.put(106, "LOGOUT");
-		messages.put(200, "OK");
-		messages.put(300, "LOGIN FAILED");
-		messages.put(301, "SYNTAX ERROR");
-		messages.put(302, "LOGIC ERROR");
-		followUps.put(200, 102);
+class LogicErrorException extends RobotException {
+	@Override
+	public void reportTo(Client client) {
+		client.sendMessage(ServerMessage.logicError);
+	}
+}
+
+class LoginFailedException extends RobotException {
+	@Override
+	public void reportTo(Client client) {
+		client.sendMessage(ServerMessage.loginFailed);
+	}
+}
+
+class MessageValidator {
+	public final String regex;
+	public final int maxLen;
+
+	public MessageValidator(String regex, int maxLen) {
+		this.regex = regex;
+		this.maxLen = maxLen;
 	}
 
-	/** Server response code. NULL means custom message. */
-	private Integer code = null;
+	public boolean isComplete(String message) {
+		return message.endsWith(ServerMessage.TERMINATION_SEQUENCE) || message.length() >= this.maxLen;
+	}
 
-	/** Server response message. */
+	public boolean check(String message) {
+		if(!message.endsWith(ServerMessage.TERMINATION_SEQUENCE)) return false;
+		if(message.length() > this.maxLen) return false;
+
+		// Message without the termination sequence
+		String messageOnly = message.substring(0, message.length() - ServerMessage.TERMINATION_SEQUENCE.length());
+
+		return messageOnly.matches(this.regex);
+	}
+}
+
+abstract class RobotMessage {
+
+	/**
+	 * Handles the client according to the message.
+	 *
+	 * @param client Client to update.
+	 * @throws RobotException Invalid message and/or client state.
+	 * @return Validator for the next message from the client.
+	 */
+	public abstract MessageValidator handle(Client client) throws RobotException;
+
+	/**
+	 * Regular update that sends directions to the client to keep searching.
+	 *
+	 * @param client Client.
+	 * @return Validator of the next message from the client.
+	 */
+	protected MessageValidator searchUpdate(Client client) {
+		if(client.robot.standsOnSearchable()) {
+			client.sendMessage(ServerMessage.pickUp);
+
+			// Expected message or empty string
+			return new MessageValidator(".*", 100);
+		}
+
+		Direction direction = client.robot.calculateDirection();
+		client.robot.tryRotate(direction);
+
+		client.sendMessage(ServerMessage.fromDirection(direction));
+
+		// Expected position update or recharge
+		return new MessageValidator("^(" + RobotOkMessage.REQUEST_REGEX + "|RECHARGING)$", 12);
+	}
+}
+
+class RobotUsernameMessage extends RobotMessage {
+
+	/** Username obtained from the request. */
+	private final String username;
+
+	public RobotUsernameMessage(String request) {
+		this.username = request;
+	}
+
+	@Override
+	public MessageValidator handle(Client client) {
+		client.login(this.username);
+		client.sendMessage(ServerMessage.confirmation(client.serverAcceptCode()));
+
+		// Expected accept code or recharge
+		return new MessageValidator("^([0-9]{1,5}|RECHARGING)$", 12);
+	}
+}
+
+class RobotRechargingMessage extends RobotMessage {
+
+	public RobotRechargingMessage(String request) throws SyntaxErrorException {
+		if(!request.matches("RECHARGING")) {
+			throw new SyntaxErrorException();
+		}
+	}
+
+	@Override
+	public MessageValidator handle(Client client) {
+		client.robot.startCharging();
+		client.waitForRecharge();
+
+		// Might as well accept anything up to 12 chars, parser will throw logic error if full power is not received.
+		return new MessageValidator(".*", 12);
+	}
+}
+
+class RobotConfirmationMessage extends RobotMessage {
+
+	/** Accept code obtained from the request. */
+	private final char acceptCode;
+
+	public RobotConfirmationMessage(String request) throws SyntaxErrorException {
+		try {
+			int code = Integer.parseInt(request);
+
+			if(code > Character.MAX_VALUE) {
+				throw new SyntaxErrorException();
+			}
+
+			this.acceptCode = (char) code;
+		}
+		catch (NumberFormatException e) {
+			throw new SyntaxErrorException();
+		}
+	}
+
+	@Override
+	public MessageValidator handle(Client client) throws LoginFailedException {
+		if(!client.authorize(this.acceptCode)) {
+			throw new LoginFailedException();
+		}
+		client.sendMessage(ServerMessage.ok);
+
+		return this.searchUpdate(client);
+	}
+}
+
+class RobotFullPowerMessage extends RobotMessage {
+
+	public RobotFullPowerMessage(String request) throws LogicErrorException {
+		if(!request.matches("FULL POWER")) {
+			throw new LogicErrorException();
+		}
+	}
+
+	@Override
+	public MessageValidator handle(Client client) {
+		client.robot.stopCharging();
+		client.resume();
+
+		// TODO are you sure about that?
+		return new MessageValidator(".*", 100);
+	}
+}
+
+class RobotOkMessage extends RobotMessage {
+
+	/** Regular expression to validate the incoming request against. */
+	public static final String REQUEST_REGEX = "^OK -?[0-9]+ -?[0-9]+$";
+
+	/** Position coordinates, obtained from the request. */
+	private final int x;
+	private final int y;
+
+	public RobotOkMessage(String request) throws SyntaxErrorException {
+		if(!request.matches(REQUEST_REGEX)) {
+			throw new SyntaxErrorException();
+		}
+
+		String[] parts = request.split(" ");
+		this.x = Integer.parseInt(parts[1]);
+		this.y = Integer.parseInt(parts[2]);
+	}
+
+	@Override
+	public MessageValidator handle(Client client) {
+		client.robot.moveTo(this.x, this.y);
+
+		return this.searchUpdate(client);
+	}
+}
+
+class RobotPickUpMessage extends RobotMessage {
+
+	/** Message obtained from the request. */
+	private final String message;
+
+	public RobotPickUpMessage(String request) {
+		this.message = request;
+	}
+
+	@Override
+	public MessageValidator handle(Client client) {
+		client.robot.search();
+
+		if(!this.message.isEmpty()) {
+			// Message found! Disconnect client
+			client.sendMessage(ServerMessage.logout);
+			client.disconnect();
+
+			return null;
+		}
+
+		return this.searchUpdate(client);
+	}
+}
+
+enum ServerMessage {
+	confirmation,
+	move("102 MOVE"),
+	turnLeft("103 TURN LEFT"),
+	turnRight("104 TURN RIGHT"),
+	pickUp("105 GET MESSAGE"),
+	logout("106 LOGOUT"),
+	ok("200 OK"),
+	loginFailed("300 LOGIN FAILED"),
+	syntaxError("301 SYNTAX ERROR"),
+	logicError("302 LOGIC ERROR");
+
+	/** Special sequence indicating end of message. */
+	public static final String TERMINATION_SEQUENCE = "\u0007\u0008"; // \a\b
+
+	/** Message from the server. */
 	private String message;
 
-	public ServerResponse(int code) {
-		this.code = code;
-		this.message = ServerResponse.messages.get(code);
+	ServerMessage(String message) {
+		this.message = message + TERMINATION_SEQUENCE;
 	}
 
-	public ServerResponse(char acceptCode) {
-		this.message = Integer.toString((int) acceptCode);
+	ServerMessage() {
 	}
 
-	public boolean closesConnection() {
-		return this.code != null && (this.code == 106 || this.code >= 300);
+	public static ServerMessage confirmation(char c) {
+		ServerMessage msg = ServerMessage.confirmation;
+		msg.setAcceptCode(c);
+
+		return msg;
 	}
 
-	public ServerResponse followUp() {
-		if(this.code != null && followUps.containsKey(this.code)) {
-			return new ServerResponse(followUps.get(this.code));
+	public static ServerMessage fromDirection(Direction direction) {
+		switch (direction) {
+			case moveForward: return ServerMessage.move;
+			case turnLeft: return ServerMessage.turnLeft;
+			case turnRight: return ServerMessage.turnRight;
 		}
-
-		return null;
+		return ServerMessage.move;
 	}
 
+	@Override
 	public String toString() {
-		StringBuilder builder = new StringBuilder(4 + this.message.length() + TERMINATION_SEQUENCE.length());
+		return this.message;
+	}
 
-		if(this.code != null) {
-			builder.append(this.code.toString());
-			builder.append(' ');
+	private void setAcceptCode(char c) {
+		this.message = Integer.toString((int) c) + TERMINATION_SEQUENCE;
+	}
+}
+
+class RobotMessageFactory {
+
+	/**
+	 * Creates robot message based on current context.
+	 *
+	 * @param client Client that has sent the message.
+	 * @param request Raw message data (without termination sequence).
+	 * @return Message instance.
+	 * @throws RobotException Invalid message and/or client state.
+	 */
+	public RobotMessage create(Client client, String request) throws RobotException {
+		if(!client.isLoggedIn()) {
+			return new RobotUsernameMessage(request);
 		}
-		builder.append(this.message);
-		builder.append(TERMINATION_SEQUENCE);
+		if(client.robot.isCharging()) {
+			return new RobotFullPowerMessage(request);
+		}
+		if(request.equals("RECHARGING")) {
+			return new RobotRechargingMessage(request);
+		}
+		if(request.equals("FULL POWER")) {
+			return new RobotFullPowerMessage(request);
+		}
+		if(!client.isAuthorized()) {
+			return new RobotConfirmationMessage(request);
+		}
+		if(request.matches(RobotOkMessage.REQUEST_REGEX)) {
+			return new RobotOkMessage(request);
+		}
 
-		return builder.toString();
-	}
-
-	public void print(PrintWriter out) {
-		out.print(this.toString());
-	}
-}
-
-enum Action {
-	login(12),
-	authorize(12),
-	update(12),
-	recharge(12),
-	stopCharging(12),
-	getMessage(100);
-
-	private int maxLength;
-
-	Action(int maxLength) {
-		this.maxLength = maxLength;
-	}
-
-	public int getMaxLength() {
-		return maxLength;
+		return new RobotPickUpMessage(request);
 	}
 }
 
-class RobotServerException extends Exception {
-	public final ServerResponse response;
+class Client {
 
-	public RobotServerException(ServerResponse response) {
-		super(response.toString());
-		this.response = response;
+	/** Virtual representation of the client machine. */
+	public final Robot robot;
+
+	/** Connection */
+	private boolean connected;
+	private Socket socket;
+
+	/** Authorization */
+	private char usernameHash = 0;
+	private boolean authorized;
+	private final char clientKey;
+	private final char serverKey;
+
+	/** Message output */
+	private PrintWriter output;
+
+	public Client(Socket socket, PrintWriter output, char serverKey, char clientKey) {
+		this.output = output;
+		this.robot = new Robot();
+		this.socket = socket;
+		this.connected = true;
+		this.authorized = false;
+		this.serverKey = serverKey;
+		this.clientKey = clientKey;
+	}
+
+	/**
+	 * Sends the message back to client.
+	 *
+	 * @param message Message to send.
+	 */
+	public void sendMessage(ServerMessage message) {
+		this.output.print(message.toString());
+		System.out.println("Message: " + message.toString());
+	}
+
+	/**
+	 * Calculates hash of the given username and sets it to current client.
+	 *
+	 * @param username Username to calculate the hash of.
+	 */
+	public void login(String username) {
+		this.usernameHash = 0;
+
+		for (int i = 0; i < username.length(); ++i) {
+			this.usernameHash += username.charAt(i) * 1000;
+		}
+	}
+
+	/**
+	 * Is logged-in?
+	 *
+	 * @return TRUE or FALSE.
+	 */
+	public boolean isLoggedIn() {
+		return this.usernameHash > 0;
+	}
+
+	/**
+	 * Attempts to authorize the client with given client accept code.
+	 *
+	 * @param acceptCode Client accept code to check.
+	 * @return TRUE if authorization was successful, FALSE otherwise.
+	 */
+	public boolean authorize(char acceptCode) {
+		return this.authorized = (this.usernameHash == (char) (acceptCode - this.clientKey));
+	}
+
+	/**
+	 * Calculates server accept code. Requires log-in.
+	 *
+	 * @return Accept code calculated.
+	 */
+	public char serverAcceptCode() {
+		return (char) (this.usernameHash + this.serverKey);
+	}
+
+	/**
+	 * Is logged-in and authorized?
+	 *
+	 * @return TRUE or FALSE.
+	 */
+	public boolean isAuthorized() {
+		return this.authorized;
+	}
+
+	/**
+	 * Gets the connection status.
+	 *
+	 * @return TRUE if client wants to be listened to from the server, FALSE if it wishes to be disconnected.
+	 */
+	public boolean isConnected() {
+		return this.connected;
+	}
+
+	/**
+	 * Disconnect the client from the server.
+	 */
+	public void disconnect() {
+		this.connected = false;
+	}
+
+	/**
+	 * Ensures server does not timeout while robot is charging.
+	 */
+	public void waitForRecharge() {
+		try {
+			this.socket.setSoTimeout(RobotServer.TIMEOUT_CHARGING);
+		}
+		catch (SocketException e) {
+			// TCP error occurred, connection cannot continue.
+			this.disconnect();
+		}
+	}
+
+	/**
+	 * Stops waiting for robot to recharge and resumes normally.
+	 */
+	public void resume() {
+		try {
+			this.socket.setSoTimeout(RobotServer.TIMEOUT_DEFAULT);
+		}
+		catch (SocketException e) {
+			// TCP error occurred, connection cannot continue.
+			this.disconnect();
+		}
 	}
 }
 
 class RobotServer {
-	private static final int TIMEOUT = 1000;
-	private static final int TIMEOUT_CHARGING = 5000;
+
+	/** Socket timeouts */
+	public static final int TIMEOUT_DEFAULT = 1000;
+	public static final int TIMEOUT_CHARGING = 5000;
+
+	/** Authorization keys */
 	private final char serverKey;
 	private final char clientKey;
-	private Robot robot = null;
-	private Map<Action, Function<String, ServerResponse>> actions = new HashMap<>();
+
+	/** Active client */
+	private Client client = null;
+
+	/** Services */
+	private RobotMessageFactory robotMessageFactory = new RobotMessageFactory();
 
 	/**
 	 * Constructs new Robot Server instance.
 	 *
-	 * @param serverKey Server key.
-	 * @param clientKey Robot key.
+	 * @param serverKey Server clientKey.
+	 * @param clientKey Robot clientKey.
 	 */
 	public RobotServer(int serverKey, int clientKey) {
 		this.serverKey = (char) serverKey;
 		this.clientKey = (char) clientKey;
-
-		// Initialize action callbacks
-		actions.put(Action.login, this::login);
-		actions.put(Action.authorize, this::authorize);
-		actions.put(Action.update, this::update);
-		actions.put(Action.stopCharging, this::stopCharging);
-		actions.put(Action.getMessage, this::getMessage);
 	}
 
 	/**
@@ -313,295 +841,54 @@ class RobotServer {
 	public void listen(int port) throws IOException {
 		ServerSocket serverSocket = new ServerSocket(port);
 		Socket clientSocket = serverSocket.accept();
-		System.out.println("client accepted from: " + clientSocket.getInetAddress() + ":" + clientSocket.getPort());
+		clientSocket.setSoTimeout(TIMEOUT_DEFAULT);
 
 		PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
-		PrintWriter outc = new PrintWriter(System.out, true);
 		BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 
-		for (;;) {
-			Action expectedAction = this.deduceAction();
+		this.client = new Client(clientSocket, out, this.serverKey, this.clientKey);
 
+		// Validator for the login.
+		MessageValidator validator = new MessageValidator(".*", 12);
+
+		while (this.client.isConnected()) {
 			try {
-				String request = this.getRequest(in, expectedAction);
-				System.out.println("request:  " + request);
-				clientSocket.setSoTimeout(TIMEOUT);
-
-				if(this.requestsCharging(request)) {
-					this.robot.startCharging();
-					clientSocket.setSoTimeout(TIMEOUT_CHARGING);
-					System.out.println("waiting for recharge");
-
-					continue;
-				}
-
-				ServerResponse response = this.actions.get(expectedAction).apply(request);
-
-				if(!this.handleResponse(response, out) && !this.handleResponse(response, outc)) break;
-
-				out.flush();
-				outc.flush();
+				RobotMessage message = this.readMessage(validator, in);
+				validator = message.handle(this.client);
 			}
-			catch (RobotServerException e) {
-				this.handleResponse(e.response, out);
-				this.handleResponse(e.response, outc);
-				out.flush();
-				outc.flush();
-				break;
+			catch (RobotException e) {
+				e.reportTo(this.client);
+				this.client.disconnect();
 			}
 			catch (SocketTimeoutException e) {
-				break;
+				this.client.disconnect();
 			}
+
+			out.flush();
 		}
 
-		System.out.println("connection on port " + port + " terminated.");
 		out.close();
 		in.close();
 		clientSocket.close();
 		serverSocket.close();
 	}
 
-	/**
-	 * Properly handles the response and prints it out if needed.
-	 *
-	 * @param response Response to handle.
-	 * @param out Output to write the responses to.
-	 * @return TRUE if server can continue listening, FALSE if connection should be closed.
-	 */
-	private boolean handleResponse(ServerResponse response, PrintWriter out) {
-		if(response == null) return true;
+	private RobotMessage readMessage(MessageValidator validator, BufferedReader in) throws RobotException, IOException {
+		StringBuilder messageBuilder = new StringBuilder(validator.maxLen);
 
-		response.print(out);
-
-		if(response.closesConnection()) return false;
-
-		for(ServerResponse followUp = response.followUp(); followUp != null; followUp = followUp.followUp()) {
-			this.handleResponse(followUp, out);
+		while(!validator.isComplete(messageBuilder.toString())) {
+			messageBuilder.append((char) in.read());
 		}
 
-		return true;
-	}
+		String message = messageBuilder.toString();
 
-	/**
-	 * Reads input stream until termination sequence or syntax error is detected.
-	 *
-	 * @param in Reader wrapping the input stream.
-	 * @param expectedAction Action that is now expected to be run.
-	 * @return Robot request.
-	 * @throws IOException Error while reading from buffered reader.
-	 * @throws RobotServerException Syntax error.
-	 */
-	private String getRequest(BufferedReader in, Action expectedAction) throws IOException, RobotServerException {
-		StringBuilder builder = new StringBuilder(expectedAction.getMaxLength());
-
-		while(!builder.toString().endsWith(ServerResponse.TERMINATION_SEQUENCE)) {
-			if(builder.length() >= expectedAction.getMaxLength()) {
-				throw new RobotServerException(new ServerResponse(301));
-			}
-
-			builder.append((char) in.read());
+		if(!validator.check(message)) {
+			throw new SyntaxErrorException();
 		}
 
-		String buffer = builder.toString();
+		message = message.substring(0, message.length() - ServerMessage.TERMINATION_SEQUENCE.length());
 
-		return buffer.substring(0, buffer.length() - ServerResponse.TERMINATION_SEQUENCE.length());
-	}
-
-	/**
-	 * Gets appropriate action for the robot to do next, based on its current state.
-	 *
-	 * @return Action to run.
-	 */
-	private Action deduceAction() {
-		if(this.robot == null) {
-			return Action.login;
-		}
-		if(this.robot.isCharging()) {
-			return Action.stopCharging;
-		}
-		if(!this.robot.isAuthorized()) {
-			return Action.authorize;
-		}
-		if(this.robot.reachedTargetArea()) {
-			return Action.getMessage;
-		}
-
-		return Action.update;
-	}
-
-	/**
-	 * Calculates accept code. Requires logged-in robot.
-	 *
-	 * @return Accept code calculated.
-	 */
-	private char acceptCode() {
-		return (char) (this.robot.getUsernameHash() + this.serverKey);
-	}
-
-	/**
-	 * Checks if the request requires charging.
-	 *
-	 * @param request Request
-	 * @return TRUE if server should wait for robot to recharge.
-	 */
-	private boolean requestsCharging(String request) {
-		return request.equals("RECHARGING");
-	}
-
-	/**
-	 * Initializes robot with given username.
-	 *
-	 * @param request Request.
-	 * @return Response.
-	 */
-	private ServerResponse login(String request) {
-		this.robot = new Robot(request, this.clientKey);
-
-		return new ServerResponse(this.acceptCode());
-	}
-
-	/**
-	 * Attempts to authorize the robot.
-	 *
-	 * @param request Request.
-	 * @return Response.
-	 */
-	private ServerResponse authorize(String request) {
-		try {
-			char clientAcceptCode = (char) Integer.parseUnsignedInt(request);
-
-			if(this.robot.authorize(clientAcceptCode)) {
-				return new ServerResponse(200);
-			}
-
-			return new ServerResponse(300);
-		}
-		catch (NumberFormatException e) {
-			return new ServerResponse(301);
-		}
-	}
-
-	/**
-	 * Marks the robot as fully charged.
-	 *
-	 * @param request Request.
-	 * @return Response.
-	 */
-	private ServerResponse stopCharging(String request) {
-		if(!request.equals("FULL POWER")) {
-			return new ServerResponse(302);
-		}
-
-		this.robot.stopCharging();
-
-		return null;
-	}
-
-	/**
-	 * Parses message pick up request. Robot will get logged out if a message has been found, otherwise keeps searching.
-	 *
-	 * @param request Request.
-	 * @return Response.
-	 */
-	private ServerResponse getMessage(String request) {
-		if(request.isEmpty()) {
-			this.robot.discover();
-
-			return this.update();
-		}
-
-		// Logout
-		this.robot = null;
-
-		return new ServerResponse(106);
-	}
-
-	/**
-	 * Updates robot movement and direction.
-	 *
-	 * @param request Request.
-	 * @return Response.
-	 */
-	private ServerResponse update(String request) {
-		try {
-			String[] parts = request.split(" ");
-
-			if(parts.length < 3
-				|| !parts[0].equals("OK")
-				|| request.trim().length() < request.length() // trailing spaces
-			) {
-				return new ServerResponse(301);
-			}
-
-			int x = Integer.parseInt(parts[1]);
-			int y = Integer.parseInt(parts[2]);
-
-			this.robot.moveTo(x, y);
-
-			return this.update();
-		}
-		catch (NumberFormatException e) {
-			return new ServerResponse(301);
-		}
-	}
-
-	/**
-	 * Sets up directions for the robot based on its current position and direction.
-	 *
-	 * @return Response.
-	 */
-	private ServerResponse update() {
-		if(!this.robot.knowsPosition()) {
-			return new ServerResponse(102);
-		}
-		if(!this.robot.knowsDirection()) {
-			return new ServerResponse(102);
-		}
-
-		Vector2 robotPos = this.robot.getPosition();
-		Vector2 robotDir = this.robot.getDirection();
-		Vector2 target = new Vector2(0, 0);
-		int minDist = Integer.MAX_VALUE;
-
-		for (int x = -2; x <= 2; x += 4) {
-			for (int y = -2; y <= 2; y += 4) {
-				Vector2 targetCandidate = new Vector2(x, y);
-
-				if(this.robot.hasDiscovered(targetCandidate)) continue;
-
-				int dist = robotPos.distance(targetCandidate);
-
-				if (dist < minDist) {
-					minDist = dist;
-					target = targetCandidate;
-				}
-			}
-		}
-
-		// Has robot reached the target?
-		if(robotPos.x == target.x && robotPos.y == target.y) {
-			return new ServerResponse(105);
-		}
-
-		Vector2 targetDir = new Vector2(target.x - robotPos.x, target.y - robotPos.y);
-
-		// Is robot set on a direction that brings him closer to target, when he moves?
-		if(Math.signum(targetDir.x) == Math.signum(robotDir.x) || (Math.signum(targetDir.y) == Math.signum(robotDir.y))) {
-			return new ServerResponse(102);
-		}
-
-		// Does rotating left help?
-		Vector2 robotDirLeft = this.robot.rotateLeft();
-
-		if(Math.signum(targetDir.x) == Math.signum(robotDirLeft.x) || Math.signum(targetDir.y) == Math.signum(robotDirLeft.y)) {
-			return new ServerResponse(104);
-		}
-
-		this.robot.rotateRight();
-		this.robot.rotateRight();
-
-		// Rotating help does not help, just rotate right whatever the case.
-		return new ServerResponse(103);
+		return this.robotMessageFactory.create(this.client, message);
 	}
 }
 
